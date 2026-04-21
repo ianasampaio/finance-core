@@ -3,13 +3,14 @@ import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { PrismaService } from 'prisma/prisma.service';
 import { UUIDGenerator } from 'src/shared/uuid-generator';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class AccountService {
   constructor(private prisma: PrismaService) {}
 
-  create(createAccountDto: CreateAccountDto) {
-    const existingAccount = this.prisma.account.findUnique({
+  async create(createAccountDto: CreateAccountDto) {
+    const existingAccount = await this.prisma.account.findUnique({
       where: {
         document: createAccountDto.document,
       },
@@ -22,7 +23,7 @@ export class AccountService {
     const creditLimit = 1000.00;
     const balance = 0.00;
 
-    const account = this.prisma.account.create({
+    const account = await this.prisma.account.create({
       data: {
         id: UUIDGenerator.generate(),
         name: createAccountDto.name,
@@ -33,24 +34,41 @@ export class AccountService {
       }
      });
 
-     return {
+    return {
       accountId: account.id,
-     }
+    };
   }
 
-  findAll() {
-    return `This action returns all account`;
+  async getBalance(accountId: string) {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+    });
+
+    if (!account) {
+      throw new Error('Account not found.');
+    }
+
+    const balance = new Prisma.Decimal(account.balance);
+    const creditLimit = new Prisma.Decimal(account.creditLimit);
+
+    const availableLimit = creditLimit.plus(balance);
+
+    return {
+      balance,
+      creditLimit,
+      availableLimit,
+    };
   }
 
-  findOne(id: number) {
+  findOne(id: string) {
     return `This action returns a #${id} account`;
   }
 
-  update(id: number, updateAccountDto: UpdateAccountDto) {
+  update(id: string, updateAccountDto: UpdateAccountDto) {
     return `This action updates a #${id} account`;
   }
 
-  remove(id: number) {
+  remove(id: string) {
     return `This action removes a #${id} account`;
   }
 }
