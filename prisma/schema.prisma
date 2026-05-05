@@ -7,12 +7,37 @@ datasource db {
 }
 
 model Account {
-  id          String   @id @default(uuid())
+  id          String     @id @default(uuid())
   name        String
-  email       String   @unique
-  document    String   @unique
-  balance     Decimal  @default(0) @db.Decimal(15, 2)
-  creditLimit Decimal  @default(1000) @db.Decimal(15, 2)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  email       String     @unique
+  document    String     @unique
+  balance     Decimal    @default(0) @db.Decimal(15, 2)
+  creditLimit Decimal    @default(1000) @db.Decimal(15, 2)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  movements   Movement[]
+}
+
+enum MovementType {
+  DEBIT
+  CREDIT
+}
+
+enum MovementStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model Movement {
+  id          String         @id @default(uuid())
+  accountId   String
+  type        MovementType
+  amount      Decimal        @db.Decimal(15, 2)
+  description String?
+  status      MovementStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  processedAt DateTime?
+
+  account Account @relation(fields: [accountId], references: [id])
 }
