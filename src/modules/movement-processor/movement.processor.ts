@@ -55,11 +55,7 @@ export class MovementProcessor {
       createdAt
     } = event.data;
 
-    const amount = new Decimal(amountStr);
-
-    if (amount.isNaN() || amount.lte(0)) {
-      throw new InvalidMovementAmountError(movementId, amountStr);
-    }
+    const amount = this.parseAmount(movementId, amountStr);
 
     const processedAt = new Date();
 
@@ -107,7 +103,11 @@ export class MovementProcessor {
 
         await tx.movement.update({
           where: { id: movementId },
-          data: { status: newStatus, processedAt },
+          data: {
+            status: newStatus,
+            processedAt,
+            balanceAfter: newBalance.toFixed(),
+          },
         });
 
         return {
@@ -129,6 +129,19 @@ export class MovementProcessor {
         );
         throw err;
       });
+  }
+
+  private parseAmount(movementId: string, amountStr: string): Decimal {
+    let amount: Decimal;
+    try {
+      amount = new Decimal(amountStr);
+    } catch {
+      throw new InvalidMovementAmountError(movementId, amountStr);
+    }
+    if (amount.isNaN() || amount.lte(0)) {
+      throw new InvalidMovementAmountError(movementId, amountStr);
+    }
+    return amount;
   }
 
   private applyMovementToBalance(
