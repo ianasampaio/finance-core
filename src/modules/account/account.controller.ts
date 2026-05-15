@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { PaginationQueryDto } from 'src/shared/dto/pagination-query.dto';
 import { AccountService } from './account.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 
-@Controller('account')
+@Controller('accounts')
 export class AccountController {
   constructor(private readonly accountService: AccountService) {}
 
@@ -12,7 +13,15 @@ export class AccountController {
   }
 
   @Get(':id')
-  getBalance(@Param('id') id: string) {
+  getBalance(@Param('id', ParseUUIDPipe) id: string) {
     return this.accountService.getBalance(id);
+  }
+
+  @Get(':id/movements')
+  findMovements(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() pagination: PaginationQueryDto,
+  ) {
+    return this.accountService.findMovements(id, pagination);
   }
 }
