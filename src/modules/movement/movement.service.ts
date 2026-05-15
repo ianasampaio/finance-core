@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { MovementStatus, Prisma } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Movement, MovementStatus, Prisma } from '@prisma/client';
 import { PrismaService } from 'prisma/prisma.service';
 import { UUIDGenerator } from 'src/shared/uuid-generator';
 import { RabbitmqService } from '../rabbitmq/rabbitmq.service';
@@ -41,22 +41,30 @@ export class MovementService {
       } satisfies MovementCreatedData,
     );
 
+    return this.toResponse(movement);
+  }
+
+  async findOne(id: string) {
+    const movement = await this.prisma.movement.findUnique({ where: { id } });
+
+    if (!movement) {
+      throw new NotFoundException(`Movement ${id} not found`);
+    }
+
+    return this.toResponse(movement);
+  }
+
+  private toResponse(movement: Movement) {
     return {
       movementId: movement.id,
       accountId: movement.accountId,
       type: movement.type,
       amount: movement.amount.toString(),
       status: movement.status,
+      balanceAfter: movement.balanceAfter?.toString() ?? null,
       description: movement.description,
-      createdAt: movement.createdAt,
+      createdAt: movement.createdAt.toISOString(),
+      processedAt: movement.processedAt?.toISOString() ?? null,
     };
-  }
-
-  findAll() {
-    return `This action returns all movement`;
-  }
-
-  findOne(id: string) {
-    return `This action returns a #${id} movement`;
   }
 }

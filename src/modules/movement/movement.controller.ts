@@ -1,8 +1,8 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { CreateMovementDto } from './dto/create-movement.dto';
 import { MovementService } from './movement.service';
 
-@Controller('movement')
+@Controller('movements')
 export class MovementController {
   constructor(private readonly movementService: MovementService) {}
 
@@ -12,13 +12,8 @@ export class MovementController {
     return this.movementService.create(createMovementDto);
   }
 
-  @Get()
-  findAll() {
-    return this.movementService.findAll();
-  }
-
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.movementService.findOne(id);
   }
 }
