@@ -30,14 +30,17 @@ enum MovementStatus {
 }
 
 model Movement {
-  id          String         @id @default(uuid())
-  accountId   String
-  type        MovementType
-  amount      Decimal        @db.Decimal(15, 2)
-  description String?
-  status      MovementStatus @default(PENDING)
-  createdAt   DateTime       @default(now())
-  processedAt DateTime?
+  id           String         @id @default(uuid())
+  accountId    String
+  type         MovementType
+  amount       Decimal        @db.Decimal(15, 2)
+  description  String?
+  status       MovementStatus @default(PENDING)
+  balanceAfter Decimal?       @db.Decimal(15, 2)
+  createdAt    DateTime       @default(now())
+  processedAt  DateTime?
 
   account Account @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, createdAt(sort: Desc)])
 }
