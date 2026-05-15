@@ -80,7 +80,7 @@ export class MovementProcessor {
           return null;
         }
 
-        await tx.$executeRaw`SELECT id FROM "account" WHERE id = ${accountId} FOR UPDATE`;
+        await tx.$executeRaw`SELECT id FROM "Account" WHERE id = ${accountId} FOR UPDATE`;
 
         const account = await tx.account.findUniqueOrThrow({
           where: { id: accountId },
