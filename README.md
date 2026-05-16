@@ -4,7 +4,7 @@ Backend financeiro para gestão de contas, movimentações e entrega de webhooks
 
 ## Objetivo
 
-Prover uma API B2B onde **Applications** (clientes da plataforma) gerenciam contas de seus usuários finais, processam débitos e créditos de forma assíncrona e recebem notificações via webhook a cada movimentação confirmada ou rejeitada.
+Prover uma API onde clientes gerenciam contas de seus usuários finais, processam débitos e créditos de forma assíncrona e recebem notificações via webhook a cada movimentação confirmada ou rejeitada.
 
 ---
 
@@ -73,9 +73,6 @@ npx prisma generate
 # Desenvolvimento (hot reload)
 npm run start:dev
 
-# Produção
-npm run build
-npm run start:prod
 ```
 
 A API estará disponível em `http://localhost:3000`.
@@ -105,13 +102,13 @@ npm run test:watch
 ┌─────────────┐     HTTP      ┌──────────────────────────────────┐
 │   Cliente   │ ────────────► │            NestJS API            │
 └─────────────┘               │  Applications / Accounts /       │
-                               │  Movements / Webhooks            │
-                               └────────────┬─────────────────────┘
-                                            │ publica eventos
-                                            ▼
+                              │  Movements / Webhooks            │
+                              └────────────┬─────────────────────┘
+                                           │ publica eventos
+                                           ▼
                                ┌────────────────────────┐
                                │        RabbitMQ        │
-                               │  finance.events        │
+                               │      finance.events    │
                                └────┬───────────────────┘
                                     │
                      ┌──────────────┴──────────────┐
@@ -133,7 +130,7 @@ npm run test:watch
 
 | Módulo | Responsabilidade |
 |---|---|
-| `ApplicationModule` | CRUD de Applications (clientes B2B) |
+| `ApplicationModule` | CRUD de Applications |
 | `AccountModule` | Criação e gestão de contas de usuários |
 | `MovementModule` | Criação e consulta de movimentações |
 | `MovementProcessorModule` | Worker que processa a fila de movimentações e atualiza saldos |
@@ -177,17 +174,6 @@ POST /movements
   └─► POST para a URL do webhook com assinatura HMAC-SHA256
   └─► Em caso de falha: agenda retry com backoff exponencial
 ```
-
-### 3. Retry de webhooks
-
-| Tentativa | Delay acumulado |
-|---|---|
-| 1ª (imediata) | — |
-| 2ª | 1 minuto |
-| 3ª | 5 minutos |
-| 4ª | 30 minutos |
-| 5ª | 2 horas |
-| 6ª | 24 horas |
 
 Após 6 tentativas sem sucesso, o `WebhookDelivery` é marcado como `FAILED`. Ao reiniciar a aplicação, entregas `PENDING` são recuperadas do banco e reagendadas automaticamente.
 
@@ -411,12 +397,7 @@ X-Timestamp:   2026-05-16T12:00:00.000Z
 X-Signature:   sha256=<hmac-hex>
 ```
 
-A assinatura é um HMAC-SHA256 do body usando o `secret` do webhook:
-
-```js
-const signature = createHmac('sha256', secret).update(body).digest('hex');
-// Validar: `sha256=${signature}` === req.headers['x-signature']
-```
+A assinatura é um HMAC-SHA256 do body usando o `secret` do webhook.
 
 **Exemplo de payload:**
 
@@ -441,23 +422,3 @@ const signature = createHmac('sha256', secret).update(body).digest('hex');
 |---|---|
 | `movement.confirmed` | Movimentação processada com sucesso |
 | `movement.failed` | Movimentação rejeitada (ex: saldo insuficiente) |
-
----
-
-## Modelo de dados
-
-```
-Application
-  ├── Account (N)
-  │     └── Movement (N)
-  └── Webhook (N)
-        └── WebhookDelivery (N)
-```
-
-| Entidade | Campos principais |
-|---|---|
-| Application | `id`, `name` |
-| Account | `id`, `applicationId`, `name`, `email`, `document`, `balance`, `creditLimit`, `active` |
-| Movement | `id`, `accountId`, `type`, `amount`, `status`, `balanceAfter`, `description`, `processedAt` |
-| Webhook | `id`, `applicationId`, `url`, `secret`, `active` |
-| WebhookDelivery | `id`, `webhookId`, `movementId`, `status`, `attempts`, `nextAttemptAt`, `payload`, `responseStatus` |
