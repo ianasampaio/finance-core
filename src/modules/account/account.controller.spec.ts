@@ -26,7 +26,12 @@ describe('AccountController', () => {
   });
 
   it('delegates create to the service', async () => {
-    const dto = { name: 'Alice', email: 'alice@example.com', document: '123' };
+    const dto = {
+      applicationId: '00000000-0000-0000-0000-000000000000',
+      name: 'Alice',
+      email: 'alice@example.com',
+      document: '123',
+    };
     service.create.mockResolvedValue({ accountId: 'a1' });
 
     await controller.create(dto);

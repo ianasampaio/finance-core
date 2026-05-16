@@ -6,16 +6,31 @@ datasource db {
   provider = "postgresql"
 }
 
+model Application {
+  id        String    @id @default(uuid())
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  accounts Account[]
+  webhooks Webhook[]
+}
+
 model Account {
-  id          String     @id @default(uuid())
-  name        String
-  email       String     @unique
-  document    String     @unique
-  balance     Decimal    @default(0) @db.Decimal(15, 2)
-  creditLimit Decimal    @default(1000) @db.Decimal(15, 2)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id            String     @id @default(uuid())
+  applicationId String
+  name          String
+  email         String     @unique
+  document      String     @unique
+  balance       Decimal    @default(0) @db.Decimal(15, 2)
+  creditLimit   Decimal    @default(1000) @db.Decimal(15, 2)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id])
   movements   Movement[]
+
+  @@index([applicationId])
 }
 
 enum MovementType {
@@ -43,4 +58,44 @@ model Movement {
   account Account @relation(fields: [accountId], references: [id])
 
   @@index([accountId, createdAt(sort: Desc)])
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model Webhook {
+  id            String    @id @default(uuid())
+  applicationId String
+  url           String
+  secret        String
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  application Application       @relation(fields: [applicationId], references: [id])
+  deliveries  WebhookDelivery[]
+
+  @@index([applicationId, active])
+}
+
+model WebhookDelivery {
+  id             String                @id @default(uuid())
+  webhookId      String
+  movementId     String
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  lastAttemptAt  DateTime?
+  nextAttemptAt  DateTime?
+  payload        Json
+  responseStatus Int?
+  responseBody   String?
+  createdAt      DateTime              @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id])
+
+  @@index([webhookId])
+  @@index([nextAttemptAt, status])
 }

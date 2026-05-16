@@ -11,6 +11,7 @@ jest.mock('src/shared/uuid-generator', () => ({
 describe('AccountService', () => {
   let service: AccountService;
   let prisma: {
+    application: { findUnique: jest.Mock };
     account: { findUnique: jest.Mock; create: jest.Mock };
     movement: { count: jest.Mock; findMany: jest.Mock };
     $transaction: jest.Mock;
@@ -18,6 +19,7 @@ describe('AccountService', () => {
 
   beforeEach(async () => {
     prisma = {
+      application: { findUnique: jest.fn() },
       account: { findUnique: jest.fn(), create: jest.fn() },
       movement: { count: jest.fn(), findMany: jest.fn() },
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
@@ -35,12 +37,14 @@ describe('AccountService', () => {
 
   describe('create', () => {
     const dto = {
+      applicationId: 'app-uuid',
       name: 'Alice',
       email: 'alice@example.com',
       document: '12345678900',
     };
 
     it('creates the account with default balance and credit limit', async () => {
+      prisma.application.findUnique.mockResolvedValue({ id: 'app-uuid' });
       prisma.account.findUnique.mockResolvedValue(null);
       prisma.account.create.mockResolvedValue({ id: 'account-uuid' });
 
@@ -49,6 +53,7 @@ describe('AccountService', () => {
       expect(prisma.account.create).toHaveBeenCalledWith({
         data: {
           id: 'account-uuid',
+          applicationId: 'app-uuid',
           name: 'Alice',
           email: 'alice@example.com',
           document: '12345678900',
@@ -59,7 +64,15 @@ describe('AccountService', () => {
       expect(result).toEqual({ accountId: 'account-uuid' });
     });
 
+    it('throws NotFoundException when application does not exist', async () => {
+      prisma.application.findUnique.mockResolvedValue(null);
+
+      await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+      expect(prisma.account.create).not.toHaveBeenCalled();
+    });
+
     it('throws ConflictException when document already exists', async () => {
+      prisma.application.findUnique.mockResolvedValue({ id: 'app-uuid' });
       prisma.account.findUnique.mockResolvedValue({ id: 'existing' });
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);

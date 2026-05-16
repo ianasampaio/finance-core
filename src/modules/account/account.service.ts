@@ -10,6 +10,15 @@ export class AccountService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createAccountDto: CreateAccountDto) {
+    const application = await this.prisma.application.findUnique({
+      where: { id: createAccountDto.applicationId },
+      select: { id: true },
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found.');
+    }
+
     const existingAccount = await this.prisma.account.findUnique({
       where: { document: createAccountDto.document },
     });
@@ -21,6 +30,7 @@ export class AccountService {
     const account = await this.prisma.account.create({
       data: {
         id: UUIDGenerator.generate(),
+        applicationId: createAccountDto.applicationId,
         name: createAccountDto.name,
         email: createAccountDto.email,
         document: createAccountDto.document,
