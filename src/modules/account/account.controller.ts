@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { PaginationQueryDto } from 'src/shared/dto/pagination-query.dto';
 import { AccountService } from './account.service';
 import { CreateAccountDto } from './dto/create-account.dto';
@@ -15,6 +15,12 @@ export class AccountController {
   @Get(':id')
   getBalance(@Param('id', ParseUUIDPipe) id: string) {
     return this.accountService.getBalance(id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deactivate(@Param('id', ParseUUIDPipe) id: string) {
+    await this.accountService.deactivate(id);
   }
 
   @Get(':id/movements')

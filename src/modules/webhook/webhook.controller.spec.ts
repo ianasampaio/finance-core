@@ -8,6 +8,7 @@ describe('WebhookController', () => {
   let service: {
     create: jest.Mock;
     findOne: jest.Mock;
+    update: jest.Mock;
     remove: jest.Mock;
   };
 
@@ -15,6 +16,7 @@ describe('WebhookController', () => {
     service = {
       create: jest.fn(),
       findOne: jest.fn(),
+      update: jest.fn(),
       remove: jest.fn(),
     };
 
@@ -58,6 +60,21 @@ describe('WebhookController', () => {
     service.findOne.mockRejectedValue(new NotFoundException());
 
     await expect(controller.findOne('missing')).rejects.toThrow(NotFoundException);
+  });
+
+  it('delegates update to the service', async () => {
+    const dto = { url: 'https://new.example.com/hook' };
+    service.update.mockResolvedValue({ id: 'wh-1', url: dto.url });
+
+    await controller.update('wh-1', dto);
+
+    expect(service.update).toHaveBeenCalledWith('wh-1', dto);
+  });
+
+  it('propagates NotFoundException from update', async () => {
+    service.update.mockRejectedValue(new NotFoundException());
+
+    await expect(controller.update('missing', { url: 'https://x.com' })).rejects.toThrow(NotFoundException);
   });
 
   it('propagates NotFoundException from remove', async () => {

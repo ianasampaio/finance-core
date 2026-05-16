@@ -12,7 +12,7 @@ describe('AccountService', () => {
   let service: AccountService;
   let prisma: {
     application: { findUnique: jest.Mock };
-    account: { findUnique: jest.Mock; create: jest.Mock };
+    account: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
     movement: { count: jest.Mock; findMany: jest.Mock };
     $transaction: jest.Mock;
   };
@@ -20,7 +20,7 @@ describe('AccountService', () => {
   beforeEach(async () => {
     prisma = {
       application: { findUnique: jest.fn() },
-      account: { findUnique: jest.fn(), create: jest.fn() },
+      account: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
       movement: { count: jest.fn(), findMany: jest.fn() },
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     };
@@ -163,6 +163,34 @@ describe('AccountService', () => {
 
       expect(result.data).toEqual([]);
       expect(result.meta).toEqual({ page: 1, limit: 20, total: 0, totalPages: 0 });
+    });
+  });
+
+  describe('deactivate', () => {
+    it('sets active to false when account is active', async () => {
+      prisma.account.findUnique.mockResolvedValue({ active: true });
+      prisma.account.update.mockResolvedValue({});
+
+      await service.deactivate('account-uuid');
+
+      expect(prisma.account.update).toHaveBeenCalledWith({
+        where: { id: 'account-uuid' },
+        data: { active: false },
+      });
+    });
+
+    it('throws NotFoundException when account does not exist', async () => {
+      prisma.account.findUnique.mockResolvedValue(null);
+
+      await expect(service.deactivate('missing')).rejects.toThrow(NotFoundException);
+      expect(prisma.account.update).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when account is already inactive', async () => {
+      prisma.account.findUnique.mockResolvedValue({ active: false });
+
+      await expect(service.deactivate('account-uuid')).rejects.toThrow(ConflictException);
+      expect(prisma.account.update).not.toHaveBeenCalled();
     });
   });
 });

@@ -58,6 +58,26 @@ export class AccountService {
     return { balance, creditLimit, availableLimit };
   }
 
+  async deactivate(accountId: string) {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { active: true },
+    });
+
+    if (!account) {
+      throw new NotFoundException('Account not found.');
+    }
+
+    if (!account.active) {
+      throw new ConflictException('Account is already inactive.');
+    }
+
+    await this.prisma.account.update({
+      where: { id: accountId },
+      data: { active: false },
+    });
+  }
+
   async findMovements(accountId: string, { page, limit }: PaginationQueryDto) {
     const account = await this.prisma.account.findUnique({
       where: { id: accountId },

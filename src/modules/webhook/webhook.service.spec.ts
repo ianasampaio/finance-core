@@ -86,6 +86,30 @@ describe('WebhookService', () => {
     });
   });
 
+  describe('update', () => {
+    it('updates and returns the webhook with the new url', async () => {
+      prisma.webhook.findUnique.mockResolvedValue({ id: 'wh-1' });
+      const updated = { id: 'wh-1', applicationId: 'app-1', url: 'https://new.example.com', active: true, updatedAt: new Date() };
+      prisma.webhook.update.mockResolvedValue(updated);
+
+      const result = await service.update('wh-1', { url: 'https://new.example.com' });
+
+      expect(prisma.webhook.update).toHaveBeenCalledWith({
+        where: { id: 'wh-1' },
+        data: { url: 'https://new.example.com' },
+        select: { id: true, applicationId: true, url: true, active: true, updatedAt: true },
+      });
+      expect(result).toBe(updated);
+    });
+
+    it('throws NotFoundException when webhook does not exist', async () => {
+      prisma.webhook.findUnique.mockResolvedValue(null);
+
+      await expect(service.update('missing', { url: 'https://x.com' })).rejects.toThrow(NotFoundException);
+      expect(prisma.webhook.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('remove', () => {
     it('deactivates the webhook', async () => {
       prisma.webhook.findUnique.mockResolvedValue({ id: 'wh-1' });

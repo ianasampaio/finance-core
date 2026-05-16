@@ -7,6 +7,7 @@ describe('AccountController', () => {
   let service: {
     create: jest.Mock;
     getBalance: jest.Mock;
+    deactivate: jest.Mock;
     findMovements: jest.Mock;
   };
 
@@ -14,6 +15,7 @@ describe('AccountController', () => {
     service = {
       create: jest.fn(),
       getBalance: jest.fn(),
+      deactivate: jest.fn(),
       findMovements: jest.fn(),
     };
 
@@ -45,6 +47,14 @@ describe('AccountController', () => {
     await controller.getBalance('a1');
 
     expect(service.getBalance).toHaveBeenCalledWith('a1');
+  });
+
+  it('delegates deactivate to the service', async () => {
+    service.deactivate.mockResolvedValue(undefined);
+
+    await controller.deactivate('a1');
+
+    expect(service.deactivate).toHaveBeenCalledWith('a1');
   });
 
   it('delegates findMovements to the service with pagination', async () => {

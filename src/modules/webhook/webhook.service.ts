@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from 'prisma/prisma.service';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
+import { UpdateWebhookDto } from './dto/update-webhook.dto';
 
 @Injectable()
 export class WebhookService {
@@ -46,6 +47,17 @@ export class WebhookService {
     });
     if (!webhook) throw new NotFoundException(`Webhook ${id} not found`);
     return webhook;
+  }
+
+  async update(id: string, dto: UpdateWebhookDto) {
+    const webhook = await this.prisma.webhook.findUnique({ where: { id } });
+    if (!webhook) throw new NotFoundException(`Webhook ${id} not found`);
+
+    return this.prisma.webhook.update({
+      where: { id },
+      data: { url: dto.url },
+      select: { id: true, applicationId: true, url: true, active: true, updatedAt: true },
+    });
   }
 
   async remove(id: string) {

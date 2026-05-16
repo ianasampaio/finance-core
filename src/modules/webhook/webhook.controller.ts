@@ -6,9 +6,11 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
+import { UpdateWebhookDto } from './dto/update-webhook.dto';
 import { WebhookService } from './webhook.service';
 
 @Controller('webhooks')
@@ -24,6 +26,11 @@ export class WebhookController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.webhookService.findOne(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateWebhookDto) {
+    return this.webhookService.update(id, dto);
   }
 
   @Delete(':id')
