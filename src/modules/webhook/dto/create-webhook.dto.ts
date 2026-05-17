@@ -1,9 +1,9 @@
-import { IsUrl, IsUUID } from 'class-validator';
+import { IsOptional, IsUrl } from 'class-validator';
 
 export class CreateWebhookDto {
-  @IsUUID()
-  applicationId!: string;
-
   @IsUrl({ require_tld: false })
   url!: string;
+
+  @IsOptional()
+  headers?: Record<string, string>;
 }

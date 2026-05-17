@@ -2,9 +2,6 @@ import { IsEmail, IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateAccountDto {
-  @IsUUID()
-  applicationId!: string;
-
   @Transform(({ value }) => value?.trim())
   @IsString()
   @IsNotEmpty()

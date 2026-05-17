@@ -4,7 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { createHmac, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { WebhookDeliveryStatus } from '@prisma/client';
 import { PrismaService } from 'prisma/prisma.service';
 import { MovementProcessedPayload } from 'src/shared/types/movement-events.types';
@@ -47,18 +47,8 @@ export class WebhookDispatcher implements OnModuleInit, OnModuleDestroy {
     const movementId = event.aggregateId;
     const { accountId } = event.data;
 
-    const account = await this.prisma.account.findUnique({
-      where: { id: accountId },
-      select: { applicationId: true },
-    });
-
-    if (!account) {
-      this.logger.warn(`Account ${accountId} not found while dispatching webhook.`);
-      return;
-    }
-
     const webhooks = await this.prisma.webhook.findMany({
-      where: { applicationId: account.applicationId, active: true },
+      where: { accountId },
     });
 
     if (webhooks.length === 0) return;
@@ -72,7 +62,8 @@ export class WebhookDispatcher implements OnModuleInit, OnModuleDestroy {
           data: { id: deliveryId, webhookId: webhook.id, movementId, payload },
         });
 
-        await this.attemptDelivery(deliveryId, webhook.url, webhook.secret, payload);
+        const customHeaders = webhook.headers as Record<string, string> | null;
+        await this.attemptDelivery(deliveryId, webhook.url, customHeaders, payload);
       }),
     );
   }
@@ -99,12 +90,11 @@ export class WebhookDispatcher implements OnModuleInit, OnModuleDestroy {
   private async attemptDelivery(
     deliveryId: string,
     url: string,
-    secret: string,
+    customHeaders: Record<string, string> | null,
     payload: WebhookPayload,
   ): Promise<void> {
     const body = JSON.stringify(payload);
     const timestamp = new Date().toISOString();
-    const signature = createHmac('sha256', secret).update(body).digest('hex');
 
     let responseStatus: number | null = null;
     let responseBody: string | null = null;
@@ -114,10 +104,10 @@ export class WebhookDispatcher implements OnModuleInit, OnModuleDestroy {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
+          ...(customHeaders ?? {}),
           'Content-Type': 'application/json',
           'X-Webhook-Id': deliveryId,
           'X-Timestamp': timestamp,
-          'X-Signature': `sha256=${signature}`,
         },
         body,
         signal: AbortSignal.timeout(10_000),
@@ -174,13 +164,13 @@ export class WebhookDispatcher implements OnModuleInit, OnModuleDestroy {
         `Retrying in ${delayMs / 1000}s.`,
     );
 
-    this.scheduleTimer(deliveryId, url, secret, payload, delayMs);
+    this.scheduleTimer(deliveryId, url, customHeaders, payload, delayMs);
   }
 
   private scheduleTimer(
     deliveryId: string,
     url: string,
-    secret: string,
+    customHeaders: Record<string, string> | null,
     payload: WebhookPayload,
     delayMs: number,
   ): void {
@@ -188,7 +178,7 @@ export class WebhookDispatcher implements OnModuleInit, OnModuleDestroy {
 
     const timer = setTimeout(() => {
       this.timers.delete(deliveryId);
-      void this.attemptDelivery(deliveryId, url, secret, payload);
+      void this.attemptDelivery(deliveryId, url, customHeaders, payload);
     }, delayMs);
 
     this.timers.set(deliveryId, timer);
@@ -197,16 +187,16 @@ export class WebhookDispatcher implements OnModuleInit, OnModuleDestroy {
   private async recoverPendingRetries(): Promise<void> {
     const pending = await this.prisma.webhookDelivery.findMany({
       where: { status: WebhookDeliveryStatus.PENDING, nextAttemptAt: { not: null } },
-      include: { webhook: { select: { url: true, secret: true, active: true } } },
+      include: { webhook: { select: { url: true, headers: true } } },
     });
 
     for (const delivery of pending) {
-      if (!delivery.nextAttemptAt || !delivery.webhook.active) continue;
+      if (!delivery.nextAttemptAt) continue;
       const delayMs = Math.max(0, delivery.nextAttemptAt.getTime() - Date.now());
       this.scheduleTimer(
         delivery.id,
         delivery.webhook.url,
-        delivery.webhook.secret,
+        delivery.webhook.headers as Record<string, string> | null,
         delivery.payload as WebhookPayload,
         delayMs,
       );

@@ -1,6 +1,10 @@
-import { IsUrl } from 'class-validator';
+import { IsOptional, IsUrl } from 'class-validator';
 
 export class UpdateWebhookDto {
+  @IsOptional()
   @IsUrl({ require_tld: false })
-  url!: string;
+  url?: string;
+
+  @IsOptional()
+  headers?: Record<string, string>;
 }

@@ -19,8 +19,8 @@ export class AccountController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    await this.accountService.deactivate(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.accountService.remove(id);
   }
 
   @Get(':id/movements')

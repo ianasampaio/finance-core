@@ -11,16 +11,14 @@ jest.mock('src/shared/uuid-generator', () => ({
 describe('AccountService', () => {
   let service: AccountService;
   let prisma: {
-    application: { findUnique: jest.Mock };
-    account: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
+    account: { findUnique: jest.Mock; create: jest.Mock; delete: jest.Mock };
     movement: { count: jest.Mock; findMany: jest.Mock };
     $transaction: jest.Mock;
   };
 
   beforeEach(async () => {
     prisma = {
-      application: { findUnique: jest.fn() },
-      account: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+      account: { findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
       movement: { count: jest.fn(), findMany: jest.fn() },
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     };
@@ -37,14 +35,12 @@ describe('AccountService', () => {
 
   describe('create', () => {
     const dto = {
-      applicationId: 'app-uuid',
       name: 'Alice',
       email: 'alice@example.com',
       document: '12345678900',
     };
 
     it('creates the account with default balance and credit limit', async () => {
-      prisma.application.findUnique.mockResolvedValue({ id: 'app-uuid' });
       prisma.account.findUnique.mockResolvedValue(null);
       prisma.account.create.mockResolvedValue({ id: 'account-uuid' });
 
@@ -53,7 +49,6 @@ describe('AccountService', () => {
       expect(prisma.account.create).toHaveBeenCalledWith({
         data: {
           id: 'account-uuid',
-          applicationId: 'app-uuid',
           name: 'Alice',
           email: 'alice@example.com',
           document: '12345678900',
@@ -64,15 +59,7 @@ describe('AccountService', () => {
       expect(result).toEqual({ accountId: 'account-uuid' });
     });
 
-    it('throws NotFoundException when application does not exist', async () => {
-      prisma.application.findUnique.mockResolvedValue(null);
-
-      await expect(service.create(dto)).rejects.toThrow(NotFoundException);
-      expect(prisma.account.create).not.toHaveBeenCalled();
-    });
-
     it('throws ConflictException when document already exists', async () => {
-      prisma.application.findUnique.mockResolvedValue({ id: 'app-uuid' });
       prisma.account.findUnique.mockResolvedValue({ id: 'existing' });
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
@@ -98,6 +85,24 @@ describe('AccountService', () => {
       prisma.account.findUnique.mockResolvedValue(null);
 
       await expect(service.getBalance('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes the account when it exists', async () => {
+      prisma.account.findUnique.mockResolvedValue({ id: 'account-uuid' });
+      prisma.account.delete.mockResolvedValue({});
+
+      await service.remove('account-uuid');
+
+      expect(prisma.account.delete).toHaveBeenCalledWith({ where: { id: 'account-uuid' } });
+    });
+
+    it('throws NotFoundException when account does not exist', async () => {
+      prisma.account.findUnique.mockResolvedValue(null);
+
+      await expect(service.remove('missing')).rejects.toThrow(NotFoundException);
+      expect(prisma.account.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -163,34 +168,6 @@ describe('AccountService', () => {
 
       expect(result.data).toEqual([]);
       expect(result.meta).toEqual({ page: 1, limit: 20, total: 0, totalPages: 0 });
-    });
-  });
-
-  describe('deactivate', () => {
-    it('sets active to false when account is active', async () => {
-      prisma.account.findUnique.mockResolvedValue({ active: true });
-      prisma.account.update.mockResolvedValue({});
-
-      await service.deactivate('account-uuid');
-
-      expect(prisma.account.update).toHaveBeenCalledWith({
-        where: { id: 'account-uuid' },
-        data: { active: false },
-      });
-    });
-
-    it('throws NotFoundException when account does not exist', async () => {
-      prisma.account.findUnique.mockResolvedValue(null);
-
-      await expect(service.deactivate('missing')).rejects.toThrow(NotFoundException);
-      expect(prisma.account.update).not.toHaveBeenCalled();
-    });
-
-    it('throws ConflictException when account is already inactive', async () => {
-      prisma.account.findUnique.mockResolvedValue({ active: false });
-
-      await expect(service.deactivate('account-uuid')).rejects.toThrow(ConflictException);
-      expect(prisma.account.update).not.toHaveBeenCalled();
     });
   });
 });

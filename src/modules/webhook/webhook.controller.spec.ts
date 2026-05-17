@@ -3,6 +3,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WebhookController } from './webhook.controller';
 import { WebhookService } from './webhook.service';
 
+const ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
+
 describe('WebhookController', () => {
   let controller: WebhookController;
   let service: {
@@ -28,58 +30,55 @@ describe('WebhookController', () => {
     controller = module.get(WebhookController);
   });
 
-  it('delegates create to the service', async () => {
-    const dto = {
-      applicationId: '00000000-0000-0000-0000-000000000001',
-      url: 'https://example.com/hook',
-    };
-    service.create.mockResolvedValue({ id: 'wh-1', ...dto, secret: 'abc', active: true });
+  it('delegates create to the service with accountId from route', async () => {
+    const dto = { url: 'https://example.com/hook' };
+    service.create.mockResolvedValue({ id: 'wh-1', accountId: ACCOUNT_ID, url: dto.url });
 
-    await controller.create(dto);
+    await controller.create(ACCOUNT_ID, dto);
 
-    expect(service.create).toHaveBeenCalledWith(dto);
+    expect(service.create).toHaveBeenCalledWith(ACCOUNT_ID, dto);
   });
 
-  it('delegates findOne to the service', async () => {
-    service.findOne.mockResolvedValue({ id: 'wh-1' });
+  it('delegates findOne to the service with accountId and id', async () => {
+    service.findOne.mockResolvedValue({ id: 'wh-1', accountId: ACCOUNT_ID });
 
-    await controller.findOne('wh-1');
+    await controller.findOne(ACCOUNT_ID, 'wh-1');
 
-    expect(service.findOne).toHaveBeenCalledWith('wh-1');
+    expect(service.findOne).toHaveBeenCalledWith(ACCOUNT_ID, 'wh-1');
   });
 
-  it('delegates remove to the service', async () => {
+  it('delegates update to the service with accountId and id', async () => {
+    const dto = { url: 'https://new.example.com/hook' };
+    service.update.mockResolvedValue({ id: 'wh-1', url: dto.url });
+
+    await controller.update(ACCOUNT_ID, 'wh-1', dto);
+
+    expect(service.update).toHaveBeenCalledWith(ACCOUNT_ID, 'wh-1', dto);
+  });
+
+  it('delegates remove to the service with accountId and id', async () => {
     service.remove.mockResolvedValue(undefined);
 
-    await controller.remove('wh-1');
+    await controller.remove(ACCOUNT_ID, 'wh-1');
 
-    expect(service.remove).toHaveBeenCalledWith('wh-1');
+    expect(service.remove).toHaveBeenCalledWith(ACCOUNT_ID, 'wh-1');
   });
 
   it('propagates NotFoundException from findOne', async () => {
     service.findOne.mockRejectedValue(new NotFoundException());
 
-    await expect(controller.findOne('missing')).rejects.toThrow(NotFoundException);
+    await expect(controller.findOne(ACCOUNT_ID, 'missing')).rejects.toThrow(NotFoundException);
   });
 
-  it('delegates update to the service', async () => {
-    const dto = { url: 'https://new.example.com/hook' };
-    service.update.mockResolvedValue({ id: 'wh-1', url: dto.url });
-
-    await controller.update('wh-1', dto);
-
-    expect(service.update).toHaveBeenCalledWith('wh-1', dto);
-  });
-
-  it('propagates NotFoundException from update', async () => {
+  it('propagates NotFoundException from update when webhook belongs to another account', async () => {
     service.update.mockRejectedValue(new NotFoundException());
 
-    await expect(controller.update('missing', { url: 'https://x.com' })).rejects.toThrow(NotFoundException);
+    await expect(controller.update(ACCOUNT_ID, 'wh-1', { url: 'https://x.com' })).rejects.toThrow(NotFoundException);
   });
 
-  it('propagates NotFoundException from remove', async () => {
+  it('propagates NotFoundException from remove when webhook belongs to another account', async () => {
     service.remove.mockRejectedValue(new NotFoundException());
 
-    await expect(controller.remove('missing')).rejects.toThrow(NotFoundException);
+    await expect(controller.remove(ACCOUNT_ID, 'missing')).rejects.toThrow(NotFoundException);
   });
 });

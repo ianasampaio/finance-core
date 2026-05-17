@@ -10,15 +10,6 @@ export class AccountService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createAccountDto: CreateAccountDto) {
-    const application = await this.prisma.application.findUnique({
-      where: { id: createAccountDto.applicationId },
-      select: { id: true },
-    });
-
-    if (!application) {
-      throw new NotFoundException('Application not found.');
-    }
-
     const existingAccount = await this.prisma.account.findUnique({
       where: { document: createAccountDto.document },
     });
@@ -30,7 +21,6 @@ export class AccountService {
     const account = await this.prisma.account.create({
       data: {
         id: UUIDGenerator.generate(),
-        applicationId: createAccountDto.applicationId,
         name: createAccountDto.name,
         email: createAccountDto.email,
         document: createAccountDto.document,
@@ -58,24 +48,17 @@ export class AccountService {
     return { balance, creditLimit, availableLimit };
   }
 
-  async deactivate(accountId: string) {
+  async remove(accountId: string) {
     const account = await this.prisma.account.findUnique({
       where: { id: accountId },
-      select: { active: true },
+      select: { id: true },
     });
 
     if (!account) {
       throw new NotFoundException('Account not found.');
     }
 
-    if (!account.active) {
-      throw new ConflictException('Account is already inactive.');
-    }
-
-    await this.prisma.account.update({
-      where: { id: accountId },
-      data: { active: false },
-    });
+    await this.prisma.account.delete({ where: { id: accountId } });
   }
 
   async findMovements(accountId: string, { page, limit }: PaginationQueryDto) {

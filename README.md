@@ -4,7 +4,7 @@ Backend financeiro para gestão de contas, movimentações e entrega de webhooks
 
 ## Objetivo
 
-Prover uma API onde clientes gerenciam contas de seus usuários finais, processam débitos e créditos de forma assíncrona e recebem notificações via webhook a cada movimentação confirmada ou rejeitada.
+Prover uma API onde clientes gerenciam contas de usuários finais, processam débitos e créditos de forma assíncrona e recebem notificações via webhook a cada movimentação confirmada ou rejeitada.
 
 ---
 
@@ -72,7 +72,6 @@ npx prisma generate
 ```bash
 # Desenvolvimento (hot reload)
 npm run start:dev
-
 ```
 
 A API estará disponível em `http://localhost:3000`.
@@ -101,8 +100,7 @@ npm run test:watch
 ```
 ┌─────────────┐     HTTP      ┌──────────────────────────────────┐
 │   Cliente   │ ────────────► │            NestJS API            │
-└─────────────┘               │  Applications / Accounts /       │
-                              │  Movements / Webhooks            │
+└─────────────┘               │  Accounts / Movements / Webhooks │
                               └────────────┬─────────────────────┘
                                            │ publica eventos
                                            ▼
@@ -121,7 +119,7 @@ npm run test:watch
                    ▼                              ▼
           ┌──────────────────┐         ┌───────────────────────┐
           │MovementProcessor │         │  WebhookDispatcher    │
-          │ Aplica débito /  │         │  POST + HMAC-SHA256   │
+          │ Aplica débito /  │         │  POST com headers     │
           │ crédito na conta │         │  Retry exponencial    │
           └──────────────────┘         └───────────────────────┘
 ```
@@ -130,11 +128,10 @@ npm run test:watch
 
 | Módulo | Responsabilidade |
 |---|---|
-| `ApplicationModule` | CRUD de Applications |
-| `AccountModule` | Criação e gestão de contas de usuários |
+| `AccountModule` | CRUD de contas de usuários |
 | `MovementModule` | Criação e consulta de movimentações |
 | `MovementProcessorModule` | Worker que processa a fila de movimentações e atualiza saldos |
-| `WebhookModule` | CRUD de webhooks registrados por Application |
+| `WebhookModule` | CRUD de webhooks registrados por conta |
 | `WebhookDispatcherModule` | Worker que entrega webhooks com retry exponencial |
 | `RabbitmqModule` | Conexão, exchanges, filas e publicação de eventos |
 
@@ -145,9 +142,8 @@ npm run test:watch
 ### 1. Cadastro e configuração
 
 ```
-POST /applications          → cria uma Application (cliente)
-POST /accounts              → cria uma conta vinculada à Application
-POST /webhooks              → registra uma URL para receber notificações
+POST /accounts                              → cria uma conta
+POST /accounts/:accountId/webhooks          → registra webhook para a conta
 ```
 
 ### 2. Fluxo de movimentação (assíncrono)
@@ -169,9 +165,9 @@ POST /movements
 
 [webhook.movements.queue]
   └─► WebhookDispatcher recebe o evento
-  └─► Localiza webhooks ativos da Application da conta
+  └─► Localiza webhooks cadastrados na conta
   └─► Cria registro WebhookDelivery
-  └─► POST para a URL do webhook com assinatura HMAC-SHA256
+  └─► POST para a URL do webhook com headers configurados
   └─► Em caso de falha: agenda retry com backoff exponencial
 ```
 
@@ -180,35 +176,6 @@ Após 6 tentativas sem sucesso, o `WebhookDelivery` é marcado como `FAILED`. Ao
 ---
 
 ## Referência da API
-
-### Applications
-
-#### Criar Application
-
-```http
-POST /applications
-Content-Type: application/json
-
-{
-  "name": "Minha Empresa"
-}
-```
-
-```json
-{
-  "applicationId": "uuid",
-  "name": "Minha Empresa",
-  "createdAt": "2026-05-16T12:00:00.000Z"
-}
-```
-
-#### Buscar Application
-
-```http
-GET /applications/:id
-```
-
----
 
 ### Accounts
 
@@ -219,7 +186,6 @@ POST /accounts
 Content-Type: application/json
 
 {
-  "applicationId": "uuid",
   "name": "Alice",
   "email": "alice@example.com",
   "document": "12345678900"
@@ -278,7 +244,7 @@ GET /accounts/:id/movements?page=1&limit=20
 }
 ```
 
-#### Desativar conta
+#### Remover conta
 
 ```http
 DELETE /accounts/:id
@@ -286,7 +252,7 @@ DELETE /accounts/:id
 
 Resposta: `204 No Content`
 
-> Operação de soft delete — a conta é marcada como `active = false`.
+> Remove a conta e todos os seus dados (movimentações e webhooks) permanentemente.
 
 ---
 
@@ -334,70 +300,80 @@ GET /movements/:id
 
 ### Webhooks
 
+Webhooks são registrados por conta. Todos os endpoints exigem o `accountId` como parâmetro de rota, garantindo que apenas webhooks pertencentes àquela conta sejam acessados.
+
 #### Registrar webhook
 
 ```http
-POST /webhooks
+POST /accounts/:accountId/webhooks
 Content-Type: application/json
 
 {
-  "applicationId": "uuid",
-  "url": "https://minha-api.com/webhooks/finance"
+  "url": "https://minha-api.com/webhooks/finance",
+  "headers": {
+    "X-Api-Key": "chave-secreta"
+  }
 }
 ```
 
 ```json
 {
   "id": "uuid",
-  "applicationId": "uuid",
+  "accountId": "uuid",
   "url": "https://minha-api.com/webhooks/finance",
-  "active": true,
-  "createdAt": "2026-05-16T12:00:00.000Z",
-  "secret": "a1b2c3..."
+  "headers": {
+    "X-Api-Key": "chave-secreta"
+  },
+  "createdAt": "2026-05-16T12:00:00.000Z"
 }
 ```
 
-> O `secret` é retornado **apenas na criação**. Guarde-o para verificar a assinatura das entregas.
+> O campo `headers` é opcional. Use-o para enviar tokens de autenticação ou qualquer header customizado que o servidor destino exija.
 
 #### Buscar webhook
 
 ```http
-GET /webhooks/:id
+GET /accounts/:accountId/webhooks/:id
 ```
 
-#### Atualizar URL
+#### Atualizar webhook
 
 ```http
-PATCH /webhooks/:id
+PATCH /accounts/:accountId/webhooks/:id
 Content-Type: application/json
 
 {
-  "url": "https://nova-url.com/hook"
+  "url": "https://nova-url.com/hook",
+  "headers": {
+    "Authorization": "Bearer novo-token"
+  }
 }
 ```
 
-#### Desativar webhook
+> Pelo menos um dos campos (`url` ou `headers`) deve ser informado.
+
+#### Remover webhook
 
 ```http
-DELETE /webhooks/:id
+DELETE /accounts/:accountId/webhooks/:id
 ```
 
 Resposta: `204 No Content`
 
 ---
 
-### Payload e assinatura do webhook
+### Payload do webhook
 
-Cada entrega faz um `POST` para a URL registrada com os headers:
+Cada entrega faz um `POST` para a URL registrada com os seguintes headers fixos mais os headers customizados configurados no webhook:
 
 ```
 Content-Type:  application/json
 X-Webhook-Id:  <delivery-uuid>
 X-Timestamp:   2026-05-16T12:00:00.000Z
-X-Signature:   sha256=<hmac-hex>
+Authorization: Bearer meu-token        ← exemplo de header customizado
 ```
 
-A assinatura é um HMAC-SHA256 do body usando o `secret` do webhook.
+> Headers customizados são enviados junto aos fixos. Se houver conflito de nome, o header fixo tem prioridade.
 
 **Exemplo de payload:**
 

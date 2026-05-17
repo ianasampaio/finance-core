@@ -1,5 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'prisma/prisma.service';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
 import { UpdateWebhookDto } from './dto/update-webhook.dto';
@@ -8,64 +7,63 @@ import { UpdateWebhookDto } from './dto/update-webhook.dto';
 export class WebhookService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateWebhookDto) {
-    const application = await this.prisma.application.findUnique({
-      where: { id: dto.applicationId },
+  async create(accountId: string, dto: CreateWebhookDto) {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
       select: { id: true },
     });
 
-    if (!application) {
-      throw new NotFoundException('Application not found.');
-    }
+    if (!account) throw new NotFoundException('Account not found.');
 
-    const secret = randomBytes(32).toString('hex');
-    const webhook = await this.prisma.webhook.create({
-      data: { applicationId: dto.applicationId, url: dto.url, secret },
+    return this.prisma.webhook.create({
+      data: { url: dto.url, headers: dto.headers, accountId },
       select: {
         id: true,
-        applicationId: true,
+        accountId: true,
         url: true,
-        active: true,
-        createdAt: true,
+        headers: true,
+        createdAt: true
       },
     });
-    // secret é retornado apenas uma vez na criação
-    return { ...webhook, secret };
   }
 
-  async findOne(id: string) {
-    const webhook = await this.prisma.webhook.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        applicationId: true,
-        url: true,
-        active: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+  async findOne(accountId: string, id: string) {
+    const webhook = await this.prisma.webhook.findFirst({
+      where: { id, accountId },
+      select: { id: true, accountId: true, url: true, headers: true, createdAt: true, updatedAt: true },
     });
     if (!webhook) throw new NotFoundException(`Webhook ${id} not found`);
     return webhook;
   }
 
-  async update(id: string, dto: UpdateWebhookDto) {
-    const webhook = await this.prisma.webhook.findUnique({ where: { id } });
+  async update(accountId: string, id: string, dto: UpdateWebhookDto) {
+    if (dto.url === undefined && dto.headers === undefined) {
+      throw new BadRequestException('At least one of url or headers must be provided.');
+    }
+
+    const webhook = await this.prisma.webhook.findFirst({ where: { id, accountId } });
     if (!webhook) throw new NotFoundException(`Webhook ${id} not found`);
 
     return this.prisma.webhook.update({
       where: { id },
-      data: { url: dto.url },
-      select: { id: true, applicationId: true, url: true, active: true, updatedAt: true },
+      data: {
+        ...(dto.url !== undefined && { url: dto.url }),
+        ...(dto.headers !== undefined && { headers: dto.headers }),
+      },
+      select: {
+        id: true,
+        accountId: true,
+        url: true,
+        headers: true,
+        updatedAt: true
+      },
     });
   }
 
-  async remove(id: string) {
-    const webhook = await this.prisma.webhook.findUnique({ where: { id } });
+  async remove(accountId: string, id: string) {
+    const webhook = await this.prisma.webhook.findFirst({ where: { id, accountId } });
     if (!webhook) throw new NotFoundException(`Webhook ${id} not found`);
-    await this.prisma.webhook.update({
-      where: { id },
-      data: { active: false },
-    });
+
+    await this.prisma.webhook.delete({ where: { id } });
   }
 }

@@ -6,32 +6,18 @@ datasource db {
   provider = "postgresql"
 }
 
-model Application {
-  id        String    @id @default(uuid())
-  name      String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  accounts Account[]
-  webhooks Webhook[]
-}
-
 model Account {
-  id            String     @id @default(uuid())
-  applicationId String
-  name          String
-  email         String     @unique
-  document      String     @unique
-  balance       Decimal    @default(0) @db.Decimal(15, 2)
-  creditLimit   Decimal    @default(1000) @db.Decimal(15, 2)
-  active        Boolean    @default(true)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  email       String   @unique
+  document    String   @unique
+  balance     Decimal  @default(0) @db.Decimal(15, 2)
+  creditLimit Decimal  @default(1000) @db.Decimal(15, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  application Application @relation(fields: [applicationId], references: [id])
-  movements   Movement[]
-
-  @@index([applicationId])
+  movements Movement[]
+  webhooks  Webhook[]
 }
 
 enum MovementType {
@@ -56,7 +42,7 @@ model Movement {
   createdAt    DateTime       @default(now())
   processedAt  DateTime?
 
-  account Account @relation(fields: [accountId], references: [id])
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, createdAt(sort: Desc)])
 }
@@ -68,18 +54,17 @@ enum WebhookDeliveryStatus {
 }
 
 model Webhook {
-  id            String    @id @default(uuid())
-  applicationId String
-  url           String
-  secret        String
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id        String   @id @default(uuid())
+  accountId String
+  url       String
+  headers   Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  application Application       @relation(fields: [applicationId], references: [id])
-  deliveries  WebhookDelivery[]
+  account    Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
 
-  @@index([applicationId, active])
+  @@index([accountId])
 }
 
 model WebhookDelivery {
@@ -95,7 +80,7 @@ model WebhookDelivery {
   responseBody   String?
   createdAt      DateTime              @default(now())
 
-  webhook Webhook @relation(fields: [webhookId], references: [id])
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
   @@index([webhookId])
   @@index([nextAttemptAt, status])

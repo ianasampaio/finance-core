@@ -42,7 +42,6 @@ const makeResponse = (ok: boolean, status = ok ? 200 : 500, body = '') => ({
 describe('WebhookDispatcher', () => {
   let dispatcher: WebhookDispatcher;
   let prisma: {
-    account: { findUnique: jest.Mock };
     webhook: { findMany: jest.Mock };
     webhookDelivery: { create: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   };
@@ -52,7 +51,6 @@ describe('WebhookDispatcher', () => {
     jest.useFakeTimers();
 
     prisma = {
-      account: { findUnique: jest.fn() },
       webhook: { findMany: jest.fn() },
       webhookDelivery: {
         create: jest.fn().mockResolvedValue({}),
@@ -79,17 +77,7 @@ describe('WebhookDispatcher', () => {
   });
 
   describe('handleEvent', () => {
-    it('does nothing when account is not found', async () => {
-      prisma.account.findUnique.mockResolvedValue(null);
-
-      await dispatcher.handleEvent(buildEvent());
-
-      expect(prisma.webhook.findMany).not.toHaveBeenCalled();
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    it('does nothing when there are no active webhooks', async () => {
-      prisma.account.findUnique.mockResolvedValue({ applicationId: 'app-1' });
+    it('does nothing when there are no active webhooks for the account', async () => {
       prisma.webhook.findMany.mockResolvedValue([]);
 
       await dispatcher.handleEvent(buildEvent());
@@ -98,11 +86,20 @@ describe('WebhookDispatcher', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it('queries webhooks directly by accountId', async () => {
+      prisma.webhook.findMany.mockResolvedValue([]);
+
+      await dispatcher.handleEvent(buildEvent({ accountId: 'acc-42' }));
+
+      expect(prisma.webhook.findMany).toHaveBeenCalledWith({
+        where: { accountId: 'acc-42' },
+      });
+    });
+
     it('creates a delivery record and dispatches for each active webhook', async () => {
-      prisma.account.findUnique.mockResolvedValue({ applicationId: 'app-1' });
       prisma.webhook.findMany.mockResolvedValue([
-        { id: 'wh-1', url: 'https://a.example.com/hook', secret: 'secret-a' },
-        { id: 'wh-2', url: 'https://b.example.com/hook', secret: 'secret-b' },
+        { id: 'wh-1', url: 'https://a.example.com/hook', headers: null },
+        { id: 'wh-2', url: 'https://b.example.com/hook', headers: null },
       ]);
       prisma.webhookDelivery.update.mockResolvedValue({ attempts: 1 });
       fetchSpy.mockResolvedValue(makeResponse(true));
@@ -113,10 +110,9 @@ describe('WebhookDispatcher', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
-    it('sends POST with HMAC-SHA256 signature and required headers', async () => {
-      prisma.account.findUnique.mockResolvedValue({ applicationId: 'app-1' });
+    it('sends POST with standard headers', async () => {
       prisma.webhook.findMany.mockResolvedValue([
-        { id: 'wh-1', url: 'https://example.com/hook', secret: 'mysecret' },
+        { id: 'wh-1', url: 'https://example.com/hook', headers: null },
       ]);
       prisma.webhookDelivery.update.mockResolvedValue({ attempts: 1 });
       fetchSpy.mockResolvedValue(makeResponse(true));
@@ -129,15 +125,42 @@ describe('WebhookDispatcher', () => {
       expect(init.headers['Content-Type']).toBe('application/json');
       expect(init.headers['X-Webhook-Id']).toBe('delivery-uuid');
       expect(init.headers['X-Timestamp']).toBeDefined();
-      expect(init.headers['X-Signature']).toMatch(/^sha256=[a-f0-9]{64}$/);
+    });
+
+    it('merges custom headers from the webhook into the request', async () => {
+      const customHeaders = { Authorization: 'Bearer secret-token', 'X-Api-Key': 'key123' };
+      prisma.webhook.findMany.mockResolvedValue([
+        { id: 'wh-1', url: 'https://example.com/hook', headers: customHeaders },
+      ]);
+      prisma.webhookDelivery.update.mockResolvedValue({ attempts: 1 });
+      fetchSpy.mockResolvedValue(makeResponse(true));
+
+      await dispatcher.handleEvent(buildEvent());
+
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit & { headers: Record<string, string> }];
+      expect(init.headers['Authorization']).toBe('Bearer secret-token');
+      expect(init.headers['X-Api-Key']).toBe('key123');
+      expect(init.headers['Content-Type']).toBe('application/json');
+    });
+
+    it('standard headers override custom headers with the same name', async () => {
+      prisma.webhook.findMany.mockResolvedValue([
+        { id: 'wh-1', url: 'https://example.com/hook', headers: { 'Content-Type': 'text/plain' } },
+      ]);
+      prisma.webhookDelivery.update.mockResolvedValue({ attempts: 1 });
+      fetchSpy.mockResolvedValue(makeResponse(true));
+
+      await dispatcher.handleEvent(buildEvent());
+
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit & { headers: Record<string, string> }];
+      expect(init.headers['Content-Type']).toBe('application/json');
     });
   });
 
   describe('delivery outcome', () => {
     beforeEach(() => {
-      prisma.account.findUnique.mockResolvedValue({ applicationId: 'app-1' });
       prisma.webhook.findMany.mockResolvedValue([
-        { id: 'wh-1', url: 'https://example.com/hook', secret: 'secret' },
+        { id: 'wh-1', url: 'https://example.com/hook', headers: null },
       ]);
     });
 
@@ -186,7 +209,7 @@ describe('WebhookDispatcher', () => {
     it('marks delivery as FAILED permanently when MAX_ATTEMPTS is reached', async () => {
       fetchSpy.mockResolvedValue(makeResponse(false, 503));
       prisma.webhookDelivery.update
-        .mockResolvedValueOnce({ attempts: 6 }) // MAX_ATTEMPTS = 6
+        .mockResolvedValueOnce({ attempts: 6 })
         .mockResolvedValueOnce({});
 
       await dispatcher.handleEvent(buildEvent());
@@ -220,17 +243,16 @@ describe('WebhookDispatcher', () => {
 
   describe('retry timer', () => {
     it('fires after RETRY_DELAYS_MS[0] (60s) and re-attempts delivery', async () => {
-      prisma.account.findUnique.mockResolvedValue({ applicationId: 'app-1' });
       prisma.webhook.findMany.mockResolvedValue([
-        { id: 'wh-1', url: 'https://example.com/hook', secret: 'secret' },
+        { id: 'wh-1', url: 'https://example.com/hook', headers: null },
       ]);
       fetchSpy
         .mockResolvedValueOnce(makeResponse(false, 500))
         .mockResolvedValueOnce(makeResponse(true, 200));
       prisma.webhookDelivery.update
-        .mockResolvedValueOnce({ attempts: 1 }) // first attempt: PENDING
-        .mockResolvedValueOnce({})              // nextAttemptAt update
-        .mockResolvedValueOnce({ attempts: 2 }); // retry attempt: SUCCESS
+        .mockResolvedValueOnce({ attempts: 1 })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ attempts: 2 });
 
       await dispatcher.handleEvent(buildEvent());
       expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -247,15 +269,12 @@ describe('WebhookDispatcher', () => {
           id: 'delivery-1',
           nextAttemptAt: new Date(Date.now() + 30_000),
           payload: {},
-          webhook: { url: 'https://example.com/hook', secret: 'secret', active: true },
+          webhook: { url: 'https://example.com/hook', headers: null },
         },
       ]);
 
       const module = await Test.createTestingModule({
-        providers: [
-          WebhookDispatcher,
-          { provide: PrismaService, useValue: prisma },
-        ],
+        providers: [WebhookDispatcher, { provide: PrismaService, useValue: prisma }],
       }).compile();
       await module.init();
 
@@ -267,17 +286,14 @@ describe('WebhookDispatcher', () => {
       prisma.webhookDelivery.findMany.mockResolvedValue([
         {
           id: 'delivery-2',
-          nextAttemptAt: new Date(Date.now() - 10_000), // already overdue
+          nextAttemptAt: new Date(Date.now() - 10_000),
           payload: {},
-          webhook: { url: 'https://example.com/hook', secret: 'secret', active: true },
+          webhook: { url: 'https://example.com/hook', headers: { Authorization: 'Bearer t' } },
         },
       ]);
 
       const module = await Test.createTestingModule({
-        providers: [
-          WebhookDispatcher,
-          { provide: PrismaService, useValue: prisma },
-        ],
+        providers: [WebhookDispatcher, { provide: PrismaService, useValue: prisma }],
       }).compile();
       await module.init();
 
@@ -285,34 +301,12 @@ describe('WebhookDispatcher', () => {
       await module.close();
     });
 
-    it('skips pending deliveries whose webhook is inactive', async () => {
-      prisma.webhookDelivery.findMany.mockResolvedValue([
-        {
-          id: 'delivery-3',
-          nextAttemptAt: new Date(Date.now() + 30_000),
-          payload: {},
-          webhook: { url: 'https://example.com/hook', secret: 'secret', active: false },
-        },
-      ]);
-
-      const module = await Test.createTestingModule({
-        providers: [
-          WebhookDispatcher,
-          { provide: PrismaService, useValue: prisma },
-        ],
-      }).compile();
-      await module.init();
-
-      expect(jest.getTimerCount()).toBe(0);
-      await module.close();
-    });
-  });
+});
 
   describe('onModuleDestroy', () => {
     it('cancels all pending retry timers', async () => {
-      prisma.account.findUnique.mockResolvedValue({ applicationId: 'app-1' });
       prisma.webhook.findMany.mockResolvedValue([
-        { id: 'wh-1', url: 'https://example.com/hook', secret: 'secret' },
+        { id: 'wh-1', url: 'https://example.com/hook', headers: null },
       ]);
       fetchSpy.mockResolvedValue(makeResponse(false, 500));
       prisma.webhookDelivery.update
@@ -323,16 +317,14 @@ describe('WebhookDispatcher', () => {
       expect(jest.getTimerCount()).toBe(1);
 
       await dispatcher.onModuleDestroy();
-
       expect(jest.getTimerCount()).toBe(0);
     });
 
     it('does not schedule new timers after shutdown', async () => {
       await dispatcher.onModuleDestroy();
 
-      prisma.account.findUnique.mockResolvedValue({ applicationId: 'app-1' });
       prisma.webhook.findMany.mockResolvedValue([
-        { id: 'wh-1', url: 'https://example.com/hook', secret: 'secret' },
+        { id: 'wh-1', url: 'https://example.com/hook', headers: null },
       ]);
       fetchSpy.mockResolvedValue(makeResponse(false, 500));
       prisma.webhookDelivery.update
@@ -340,7 +332,6 @@ describe('WebhookDispatcher', () => {
         .mockResolvedValueOnce({});
 
       await dispatcher.handleEvent(buildEvent());
-
       expect(jest.getTimerCount()).toBe(0);
     });
   });
