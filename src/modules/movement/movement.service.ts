@@ -17,6 +17,13 @@ export class MovementService {
   async create(createMovementDto: CreateMovementDto) {
     const { accountId, amount, type, description } = createMovementDto;
 
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { id: true },
+    });
+
+    if (!account) throw new NotFoundException('Account not found.');
+
     const movement = await this.prisma.movement.create({
       data: {
         id: UUIDGenerator.generate(),
